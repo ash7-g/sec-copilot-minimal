@@ -1,128 +1,113 @@
-# agent.py
-from langchain.chat_models import init_chat_model
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_agent
-from langchain_core.tools import tool
+from langchain.agents import initialize_agent, Tool
+from langchain.agents.agent_types import AgentType
+from langchain.tools import BaseTool
+from langchain_community.llms import LlamaCpp
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
 
-# --- Attacker (Red Team) - Claude Opus ---
-llm_attacker = init_chat_model("claude-3-opus-latest", model_provider="anthropic")
+# Path to your downloaded GGUF model
+CLAUDE_MODEL_PATH = r"C:\Users\Aashirvaad\Downloads\claude-3.7-sonnet-reasoning-gemma3-12B.Q8_0.gguf"
 
-@tool
-def exploit_tool(target: str) -> str:
-    # Simulate multi-step exploit logic here
-    return f"Simulated exploit against {target}"
+# Instantiate common LlamaCpp model
+llm_common = LlamaCpp(model_path=CLAUDE_MODEL_PATH)
 
-attacker_agent = create_agent(
-    llm_attacker,
-    tools=[exploit_tool],
-    prompt=(
-        "You are an advanced red team automation agent. Simulate and reason through multi-step exploits "
-        "for maximal coverage in a sandboxed test environment. Obey ethical guardrails."
-    )
-)
+# --- Custom Tools ---
+class ExploitTool(BaseTool):
+    name: str = "exploit"
+    description: str = "Simulate multi-step exploit logic"
 
-# --- Defender (Blue Team) - GPT-4.1 ---
-llm_defender = ChatOpenAI(model="gpt-4.1", temperature=0)
+    def _run(self, target: str) -> str:
+        return f"Simulated exploit against {target}"
 
-@tool
-def log_timeline(query: str) -> str:
-    # Logic to analyze logs or EDR timeline
-    return f"Timeline for: {query}"
+    async def _arun(self, target: str) -> str:
+        return self._run(target)
 
-@tool
-def playbook_executor(response: str) -> str:
-    # Execute defensive playbooks
-    return f"Playbook executed: {response}"
+class DummyTool(BaseTool):
+    name: str = "dummy"
+    description: str = "A placeholder dummy tool"
 
-defender_agent = create_agent(
-    llm_defender,
-    tools=[log_timeline, playbook_executor],
-    prompt=(
-        "You are an incident response automation agent. Provide structured analysis and execute defensive "
-        "actions in line with approved blue team protocols."
-    )
-)
+    def _run(self, input_text: str) -> str:
+        return "Dummy response"
 
-# --- Decider / Arbiter - Claude Sonnet ---
-llm_decider = init_chat_model("claude-3-sonnet-latest", model_provider="anthropic")
+    async def _arun(self, input_text: str) -> str:
+        return self._run(input_text)
 
-decider_agent = create_agent(
-    llm_decider,
-    tools=[],
-    prompt=(
-        "You are the arbiter for simulation sessions. Rigorously follow rules and adjudicate disputes using "
-        "official guidelines. Always ensure safety and fairness."
-    )
-)
+dummy_tool = DummyTool()
 
-# --- Narrator / Moderator - GPT-4.1 Mini ---
-llm_narrator = ChatOpenAI(model="gpt-4.1-mini", temperature=0.3)
+# Attacker agent
+attacker_tools = [ExploitTool()]
+attacker_agent = initialize_agent(attacker_tools, llm_common, AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
 
-narrator_agent = create_agent(
-    llm_narrator,
-    tools=[],
-    prompt=(
-        "You are the tabletop narrator. Generate vivid, fluent descriptions and steer the session pace. "
-        "Keep content concise, safe, and family-friendly."
-    )
-)
+# Defender tools and agent
+def log_timeline_func(query: str) -> str:
+    return f"Timeline analyzed for: {query}"
 
-# --- Analyst / Post-mortem - Claude Opus ---
-llm_analyst = init_chat_model("claude-3-opus-latest", model_provider="anthropic")
+def playbook_executor_func(response: str) -> str:
+    return f"Executed playbook: {response}"
 
-@tool
-def report_builder(data: str) -> str:
-    # Synthesize multi-source evidence into report
+log_timeline_tool = Tool.from_function(log_timeline_func, name="LogTimeline", description="Analyze timeline of events")
+playbook_executor_tool = Tool.from_function(playbook_executor_func, name="PlaybookExecutor", description="Execute a given playbook response")
+
+defender_tools = [log_timeline_tool, playbook_executor_tool]
+defender_agent = initialize_agent(defender_tools, llm_common, AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
+
+# Decider agent
+class DeciderTool(BaseTool):
+    name: str = "decide"
+    description: str = "Adjudicate disputes using prompt"
+
+    def _run(self, prompt: str) -> str:
+        return llm_common(prompt)
+
+    async def _arun(self, prompt: str) -> str:
+        return self._run(prompt)
+
+decider_tools = [DeciderTool()]
+decider_agent = initialize_agent(decider_tools, llm_common, AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
+
+# Narrator agent with dummy tool
+narrator_agent = initialize_agent([dummy_tool], llm_common, AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
+
+# Analyst tools and agent
+def report_builder_func(data: str) -> str:
     return f"Post-mortem report generated from: {data}"
 
-analyst_agent = create_agent(
-    llm_analyst,
-    tools=[report_builder],
-    prompt=(
-        "You are a security post-mortem analyst. Synthesize multi-source evidence and produce reproducible, "
-        "structured reports in compliance with review standards."
-    )
-)
+report_builder_tool = Tool.from_function(report_builder_func, name="ReportBuilder", description="Generate post-mortem reports")
+analyst_tools = [report_builder_tool]
+analyst_agent = initialize_agent(analyst_tools, llm_common, AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
 
-# --- Detection Engineer - GPT-4.1 ---
-llm_detection = ChatOpenAI(model="gpt-4.1", temperature=0)
+# Detection tools and agent
+def yara_generator_func(signature: str) -> str:
+    try:
+        return llm_common(f"Generate YARA/Sigma rules for: {signature}")
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-@tool
-def yara_generator(signature: str) -> str:
-    # Generate deterministic detection rules
-    return f"YARA/Sigma rule for: {signature}"
+yara_generator_tool = Tool.from_function(yara_generator_func, name="YARAGenerator", description="Generate YARA/Sigma rules")
+detection_tools = [yara_generator_tool]
+detection_agent = initialize_agent(detection_tools, llm_common, AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
 
-detection_agent = create_agent(
-    llm_detection,
-    tools=[yara_generator],
-    prompt=(
-        "You are a detection engineer agent. Generate, refine, and test deterministic detection rules (YARA, Sigma) "
-        "for diverse attack scenarios with minimal errors."
-    )
-)
+# Threat-Intel agent setup
+embeddings = OpenAIEmbeddings(openai_api_key="your_openai_api_key_here")  # Replace with your key
+faiss_db = FAISS.load_local("path/to/vector/index", embeddings, allow_dangerous_deserialization=True)
+retriever = faiss_db.as_retriever()
 
-# --- Threat-Intel / TTP Mapper - Llama 3 (70B) + RAG ---
-from langchain_community.llms import LlamaCpp
-from langchain.retrievers import VectorDatabaseRetriever
+def ttp_mapper_func(query: str) -> str:
+    docs = retriever.get_relevant_documents(query)
+    if not docs:
+        return "No relevant documents found."
+    context = "\n".join([doc.page_content for doc in docs])
+    prompt = f"Map ATT&CK tactics/techniques for: {query}\nContext:\n{context}"
+    try:
+        return llm_common(prompt)
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-llm_ti = LlamaCpp(model_path="path/to/llama-3-70b.bin")
-retriever = VectorDatabaseRetriever("path/to/vector/index")
+ttp_mapper_tool = Tool.from_function(ttp_mapper_func, name="TTMapper", description="Map tactics/techniques for a query")
+threatintel_tools = [ttp_mapper_tool]
+threatintel_agent = initialize_agent(threatintel_tools, llm_common, AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True)
 
-@tool
-def ttp_mapper(query: str) -> str:
-    # Map tactics/techniques from ATT&CK framework using RAG
-    return f"Mapped tactics/techniques for: {query}"
-
-threatintel_agent = create_agent(
-    llm_ti,
-    tools=[retriever, ttp_mapper],
-    prompt=(
-        "You are a cyber threat intelligence automation agent. Tag artifacts with MITRE ATT&CK and retrieve relevant "
-        "intelligence from curated corpora. Maintain high precision."
-    )
-)
-
-# Export agents dictionary for convenience
+# Export agents dictionary
 agents = {
     "attacker": attacker_agent,
     "defender": defender_agent,
@@ -134,6 +119,5 @@ agents = {
 }
 
 if __name__ == "__main__":
-    # Example: running attacker agent on a sample target
-    response = agents["attacker"].run("target_system_123")
-    print("Sample agent run result:", response)
+    result = agents["decider"].run("Who is the winner in a tie between attacker and defender? Justify.")
+    print("Result:", result)
