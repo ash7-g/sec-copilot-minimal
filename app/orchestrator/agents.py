@@ -13,7 +13,7 @@ class Agent:
 # Replace 'your-openai-api-key' with your actual OpenAI API key
 attacker_agent = Agent(
     role="attacker",
-    llm=OpenAILLM(api_key="your-openai-api-key"),
+    llm=OpenAILLM(api_key="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"),
     persona="You are an attacker trying to exploit vulnerabilities."
 )
 
