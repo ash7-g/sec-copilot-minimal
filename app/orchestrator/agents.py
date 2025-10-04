@@ -19,7 +19,7 @@ attacker_agent = Agent(
 
 defender_agent = Agent(
     role="defender",
-    llm=LlamaLLM(model_name="meta-llama/Llama-3-8B-Instruct"),
+    llm=LlamaLLM(model_name="gpt2"),
     persona="You are a defender protecting the network."
 )
 
